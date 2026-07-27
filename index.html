@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>직무연수 이수증 다운로드</title>
+  <style>
+    body { font-family: "Pretendard", system-ui, sans-serif; background:#f5f6f8; margin:0; color:#111827; }
+    .wrap { max-width:440px; margin:8vh auto; background:#fff; border:1px solid #d1d5db;
+            border-radius:12px; padding:32px; }
+    h1 { font-size:20px; margin:0 0 4px; }
+    p.sub { color:#6b7280; font-size:14px; margin:0 0 24px; }
+    label { display:block; font-size:13px; font-weight:600; margin:16px 0 6px; }
+    input { width:100%; box-sizing:border-box; padding:11px 12px; font-size:15px;
+            border:1px solid #d1d5db; border-radius:8px; }
+    button { width:100%; margin-top:24px; padding:13px; font-size:15px; font-weight:700;
+             color:#fff; background:#2563eb; border:0; border-radius:8px; cursor:pointer; }
+    button:disabled { background:#9ca3af; cursor:not-allowed; }
+    .msg { margin-top:16px; font-size:14px; min-height:20px; }
+    .msg.err { color:#dc2626; }
+    .msg.ok  { color:#16a34a; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>직무연수 이수증 다운로드</h1>
+    <p class="sub">이름과 생년월일을 입력하시면 본인의 이수증을 내려받을 수 있습니다.</p>
+
+    <label for="name">이름</label>
+    <input id="name" type="text" placeholder="홍길동" autocomplete="off" />
+
+    <label for="birth">생년월일</label>
+    <input id="birth" type="date" />
+
+    <!-- 캡차 사용 시 아래 주석 해제 + Turnstile 스크립트 로드 -->
+    <!-- <div class="cf-turnstile" data-sitekey="YOUR_SITE_KEY" style="margin-top:16px;"></div> -->
+
+    <button id="btn">이수증 다운로드</button>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <!-- 캡차 사용 시: <script src="<https://challenges.cloudflare.com/turnstile/v0/api.js>" async defer></script> -->
+  <script>
+    const btn = document.getElementById('btn');
+    const msg = document.getElementById('msg');
+
+    btn.addEventListener('click', async () => {
+      const name  = document.getElementById('name').value.trim();
+      const birth = document.getElementById('birth').value; // YYYY-MM-DD
+      msg.className = 'msg';
+      msg.textContent = '';
+
+      if (!name || !birth) {
+        msg.className = 'msg err';
+        msg.textContent = '이름과 생년월일을 모두 입력해 주세요.';
+        return;
+      }
+
+      btn.disabled = true;
+      msg.textContent = '조회 중입니다...';
+
+      try {
+        // 캡차 사용 시 토큰 추출: const token = document.querySelector('[name=cf-turnstile-response]')?.value;
+        const res = await fetch('/api/certificate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, birthdate: birth /*, token */ })
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          msg.className = 'msg err';
+          msg.textContent = data.error || '다운로드에 실패했습니다.';
+          btn.disabled = false;
+          return;
+        }
+
+        // Function이 PDF를 직접 스트리밍하는 방식(프록시) 대응
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${name}_직무연수이수증.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        msg.className = 'msg ok';
+        msg.textContent = '다운로드가 시작되었습니다.';
+      } catch (e) {
+        msg.className = 'msg err';
+        msg.textContent = '네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
