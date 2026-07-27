@@ -1,13 +1,27 @@
 // Cloudflare Pages Function  ( /api/certificate )
 
-// ── [기능1] 다운로드 가능 기간 조회 (GET) ──
-//   비밀키는 반환하지 않고 기간 값만 내려준다.
+// 담당자 연락처 기본값 (환경변수 SUPPORT_CONTACT 미설정 시 사용)
+const DEFAULT_CONTACT = '02-2600-0842';
+
+// 서버 시각 기준으로 다운로드 상태를 판정한다.
+//   'before' : 시작 전 / 'ended' : 종료 후 / 'open' : 다운로드 가능
+function computeStatus(env, now) {
+  if (env.AVAILABLE_FROM && now < new Date(env.AVAILABLE_FROM)) return 'before';
+  if (env.AVAILABLE_UNTIL && now > new Date(env.AVAILABLE_UNTIL)) return 'ended';
+  return 'open';
+}
+
+// ── [기능1 + 기능A/B/C] 기간·상태 조회 (GET) ──
+//   비밀키는 반환하지 않고, 기간 값 + 상태 + 담당자 연락처만 내려준다.
 export async function onRequestGet(context) {
   const { env } = context;
+  const status = computeStatus(env, new Date());
   return new Response(
     JSON.stringify({
-      from:  env.AVAILABLE_FROM  || null,
-      until: env.AVAILABLE_UNTIL || null
+      from:    env.AVAILABLE_FROM  || null,
+      until:   env.AVAILABLE_UNTIL || null,
+      status:  status,                              // 'before' | 'open' | 'ended'
+      contact: env.SUPPORT_CONTACT || DEFAULT_CONTACT
     }),
     { headers: { 'Content-Type': 'application/json; charset=utf-8' } }
   );
@@ -34,13 +48,15 @@ export async function onRequestPost(context) {
       return json({ error: '생년월일 형식이 올바르지 않습니다.' }, 400);
     }
 
-    // 2) 다운로드 기간 검증 (실제 차단은 서버가 담당)
+    // 2) 다운로드 기간 검증 (실제 차단은 서버가 담당 · 프론트 숨김과 이중 안전장치)
     const now = new Date();
+    const contact = env.SUPPORT_CONTACT || DEFAULT_CONTACT;
     if (env.AVAILABLE_FROM && now < new Date(env.AVAILABLE_FROM)) {
       return json({ error: '아직 다운로드 기간이 아닙니다.' }, 403);
     }
     if (env.AVAILABLE_UNTIL && now > new Date(env.AVAILABLE_UNTIL)) {
-      return json({ error: '다운로드 기간이 종료되었습니다.' }, 403);
+      // 프론트가 폼을 감추지 못한 경우(직접 POST 등)에도 동일 안내로 차단
+      return json({ error: `다운로드 기간이 종료되었습니다. 업무담당자(${contact})에게 연락주십시오!` }, 403);
     }
 
     // 3) (선택) 캡차 검증
@@ -97,7 +113,6 @@ export async function onRequestPost(context) {
     const fileURL = `${env.SUPABASE_URL}/storage/v1${signedURL}`;
 
     // 6) 서버가 PDF를 받아 그대로 스트리밍(프록시)
-    //    inline 로 내려주면 브라우저 iframe 미리보기(기능2)에 그대로 뜬다.
     const fileRes = await fetch(fileURL);
     if (!fileRes.ok) return json({ error: '파일 다운로드에 실패했습니다.' }, 502);
 
@@ -106,7 +121,6 @@ export async function onRequestPost(context) {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        // 미리보기(iframe) + 다운로드 버튼 모두 프론트에서 blob으로 처리하므로 inline 권장
         'Content-Disposition': `inline; filename*=UTF-8''${filename}`,
         'Cache-Control': 'no-store'
       }
