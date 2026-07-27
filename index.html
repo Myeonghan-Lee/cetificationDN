@@ -6,10 +6,12 @@
   <title>직무연수 이수증 다운로드</title>
   <style>
     body { font-family: "Pretendard", system-ui, sans-serif; background:#f5f6f8; margin:0; color:#111827; }
-    .wrap { max-width:440px; margin:8vh auto; background:#fff; border:1px solid #d1d5db;
+    .wrap { max-width:560px; margin:6vh auto; background:#fff; border:1px solid #d1d5db;
             border-radius:12px; padding:32px; }
     h1 { font-size:20px; margin:0 0 4px; }
-    p.sub { color:#6b7280; font-size:14px; margin:0 0 24px; }
+    p.sub { color:#6b7280; font-size:14px; margin:0 0 8px; }
+    /* [기능1] 다운로드 가능 기간 안내 */
+    .period { font-size:13px; color:#2563eb; font-weight:600; margin:0 0 20px; min-height:18px; }
     label { display:block; font-size:13px; font-weight:600; margin:16px 0 6px; }
     input { width:100%; box-sizing:border-box; padding:11px 12px; font-size:15px;
             border:1px solid #d1d5db; border-radius:8px; }
@@ -19,34 +21,78 @@
     .msg { margin-top:16px; font-size:14px; min-height:20px; }
     .msg.err { color:#dc2626; }
     .msg.ok  { color:#16a34a; }
+    /* [기능2] 미리보기 영역 */
+    #previewWrap { display:none; margin-top:24px; }
+    #previewWrap h2 { font-size:14px; margin:0 0 8px; }
+    #preview { width:100%; height:520px; border:1px solid #d1d5db; border-radius:8px; }
+    .dl { display:inline-block; width:auto; margin-top:12px; padding:11px 20px;
+          font-size:14px; font-weight:700; color:#fff; background:#16a34a;
+          border-radius:8px; text-decoration:none; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>직무연수 이수증 다운로드</h1>
-    <p class="sub">이름과 생년월일을 입력하시면 본인의 이수증을 내려받을 수 있습니다.</p>
+    <p class="sub">이름과 생년월일을 입력하시면 본인의 이수증을 미리 보고 내려받을 수 있습니다.</p>
+    <p class="period" id="period"></p>
 
     <label for="name">이름</label>
     <input id="name" type="text" placeholder="홍길동" autocomplete="off" />
 
     <label for="birth">생년월일</label>
-    <input id="birth" type="date" />
+    <!-- [기능3] date -> text: 숫자만 입력해도 자동으로 4-2-2 하이픈 삽입 -->
+    <input id="birth" type="text" inputmode="numeric" maxlength="10"
+           placeholder="YYYY-MM-DD (숫자만 입력)" autocomplete="off" />
 
     <!-- 캡차 사용 시 아래 주석 해제 + Turnstile 스크립트 로드 -->
     <!-- <div class="cf-turnstile" data-sitekey="YOUR_SITE_KEY" style="margin-top:16px;"></div> -->
 
-    <button id="btn">이수증 다운로드</button>
+    <button id="btn">이수증 조회</button>
     <div id="msg" class="msg"></div>
+
+    <!-- [기능2] 조회 성공 시 표시되는 미리보기 + 다운로드 -->
+    <div id="previewWrap">
+      <h2>이수증 미리보기</h2>
+      <iframe id="preview" title="이수증 미리보기"></iframe>
+      <a id="dl" class="dl" download>PDF 다운로드</a>
+    </div>
   </div>
 
   <!-- 캡차 사용 시: <script src="<https://challenges.cloudflare.com/turnstile/v0/api.js>" async defer></script> -->
   <script>
     const btn = document.getElementById('btn');
     const msg = document.getElementById('msg');
+    const birthInput = document.getElementById('birth');
+    const previewWrap = document.getElementById('previewWrap');
+    const preview = document.getElementById('preview');
+    const dl = document.getElementById('dl');
+    let lastURL = null; // 이전 미리보기 objectURL 정리용
+
+    // [기능1] 다운로드 가능 기간 표시 (GET으로 조회)
+    fetch('/api/certificate')
+      .then(r => r.json())
+      .then(({ from, until }) => {
+        if (!from && !until) return;
+        const f = s => s ? s.slice(0, 10).replace(/-/g, '.') : '';
+        const el = document.getElementById('period');
+        if (from && until) el.textContent = `다운로드 가능 기간: ${f(from)} ~ ${f(until)}`;
+        else if (from)     el.textContent = `다운로드 시작일: ${f(from)}`;
+        else               el.textContent = `다운로드 마감일: ${f(until)}`;
+      })
+      .catch(() => {});
+
+    // [기능3] 생년월일 자동 하이픈 (4-2-2)
+    birthInput.addEventListener('input', (e) => {
+      const v = e.target.value.replace(/\D/g, '').slice(0, 8); // 숫자만 8자리
+      let out = v;
+      if (v.length > 6)      out = `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6)}`;
+      else if (v.length > 4) out = `${v.slice(0,4)}-${v.slice(4)}`;
+      e.target.value = out;
+    });
 
     btn.addEventListener('click', async () => {
       const name  = document.getElementById('name').value.trim();
-      const birth = document.getElementById('birth').value; // YYYY-MM-DD
+      const birth = birthInput.value; // YYYY-MM-DD
       msg.className = 'msg';
       msg.textContent = '';
 
@@ -55,12 +101,18 @@
         msg.textContent = '이름과 생년월일을 모두 입력해 주세요.';
         return;
       }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(birth)) {
+        msg.className = 'msg err';
+        msg.textContent = '생년월일을 YYYYMMDD 8자리로 입력해 주세요.';
+        return;
+      }
 
       btn.disabled = true;
+      previewWrap.style.display = 'none';
       msg.textContent = '조회 중입니다...';
 
       try {
-        // 캡차 사용 시 토큰 추출: const token = document.querySelector('[name=cf-turnstile-response]')?.value;
+        // 캡차 사용 시: const token = document.querySelector('[name=cf-turnstile-response]')?.value;
         const res = await fetch('/api/certificate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -70,24 +122,23 @@
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           msg.className = 'msg err';
-          msg.textContent = data.error || '다운로드에 실패했습니다.';
+          msg.textContent = data.error || '조회에 실패했습니다.';
           btn.disabled = false;
           return;
         }
 
-        // Function이 PDF를 직접 스트리밍하는 방식(프록시) 대응
+        // [기능2] PDF blob 수신 → 미리보기 + 다운로드 링크 연결
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${name}_직무연수이수증.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        if (lastURL) URL.revokeObjectURL(lastURL);
+        lastURL = URL.createObjectURL(blob);
+
+        preview.src = lastURL;                       // iframe 미리보기
+        dl.href = lastURL;                           // 다운로드 버튼
+        dl.download = `${name}_직무연수이수증.pdf`;
+        previewWrap.style.display = 'block';
 
         msg.className = 'msg ok';
-        msg.textContent = '다운로드가 시작되었습니다.';
+        msg.textContent = '조회 완료. 아래에서 미리 보고 다운로드하세요.';
       } catch (e) {
         msg.className = 'msg err';
         msg.textContent = '네트워크 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
