@@ -28,33 +28,50 @@
     .dl { display:inline-block; width:auto; margin-top:12px; padding:11px 20px;
           font-size:14px; font-weight:700; color:#fff; background:#16a34a;
           border-radius:8px; text-decoration:none; }
+    /* [기능A · v3] 기간 종료 안내 문구 (평소 숨김) */
+    #endedWrap { display:none; }
+    #endedWrap .ended {
+      font-size:16px; font-weight:700; line-height:1.6; color:#dc2626; text-align:center;
+      padding:24px 8px;
+    }
+    /* 종료 화면에서는 기존 폼 영역을 숨긴다 */
+    body.ended #formArea { display:none; }
+    body.ended #endedWrap { display:block; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>직무연수 이수증 다운로드</h1>
-    <p class="sub">이름과 생년월일을 입력하시면 본인의 이수증을 미리 보고 내려받을 수 있습니다.</p>
-    <p class="period" id="period"></p>
+    <!-- 평상시(다운로드 가능) 화면 -->
+    <div id="formArea">
+      <h1>직무연수 이수증 다운로드</h1>
+      <p class="sub">이름과 생년월일을 입력하시면 본인의 이수증을 미리 보고 내려받을 수 있습니다.</p>
+      <p class="period" id="period"></p>
 
-    <label for="name">이름</label>
-    <input id="name" type="text" placeholder="홍길동" autocomplete="off" />
+      <label for="name">이름</label>
+      <input id="name" type="text" placeholder="홍길동" autocomplete="off" />
 
-    <label for="birth">생년월일</label>
-    <!-- [기능3] date -> text: 숫자만 입력해도 자동으로 4-2-2 하이픈 삽입 -->
-    <input id="birth" type="text" inputmode="numeric" maxlength="10"
-           placeholder="YYYY-MM-DD (숫자만 입력)" autocomplete="off" />
+      <label for="birth">생년월일</label>
+      <!-- [기능3] date -> text: 숫자만 입력해도 자동으로 4-2-2 하이픈 삽입 -->
+      <input id="birth" type="text" inputmode="numeric" maxlength="10"
+             placeholder="YYYY-MM-DD (숫자만 입력)" autocomplete="off" />
 
-    <!-- 캡차 사용 시 아래 주석 해제 + Turnstile 스크립트 로드 -->
-    <!-- <div class="cf-turnstile" data-sitekey="YOUR_SITE_KEY" style="margin-top:16px;"></div> -->
+      <!-- 캡차 사용 시 아래 주석 해제 + Turnstile 스크립트 로드 -->
+      <!-- <div class="cf-turnstile" data-sitekey="YOUR_SITE_KEY" style="margin-top:16px;"></div> -->
 
-    <button id="btn">이수증 조회</button>
-    <div id="msg" class="msg"></div>
+      <button id="btn">이수증 조회</button>
+      <div id="msg" class="msg"></div>
 
-    <!-- [기능2] 조회 성공 시 표시되는 미리보기 + 다운로드 -->
-    <div id="previewWrap">
-      <h2>이수증 미리보기</h2>
-      <iframe id="preview" title="이수증 미리보기"></iframe>
-      <a id="dl" class="dl" download>PDF 다운로드</a>
+      <!-- [기능2] 조회 성공 시 표시되는 미리보기 + 다운로드 -->
+      <div id="previewWrap">
+        <h2>이수증 미리보기</h2>
+        <iframe id="preview" title="이수증 미리보기"></iframe>
+        <a id="dl" class="dl" download>PDF 다운로드</a>
+      </div>
+    </div>
+
+    <!-- [기능A · v3] 기간 종료 시 이 문구만 표시 -->
+    <div id="endedWrap">
+      <p class="ended" id="endedText"></p>
     </div>
   </div>
 
@@ -68,10 +85,21 @@
     const dl = document.getElementById('dl');
     let lastURL = null; // 이전 미리보기 objectURL 정리용
 
-    // [기능1] 다운로드 가능 기간 표시 (GET으로 조회)
+    // [기능A·v3 + 기능1] 페이지 로드 시 상태/기간 조회
+    //   status === 'ended' 이면 폼 전체를 감추고 안내 문구만 표시한다.
     fetch('/api/certificate')
       .then(r => r.json())
-      .then(({ from, until }) => {
+      .then(({ from, until, status, contact }) => {
+        // ── [기능A] 기간 종료 처리 ──
+        if (status === 'ended') {
+          const phone = contact || '02-2600-0842';
+          document.getElementById('endedText').textContent =
+            `다운로드 기간이 종료되었습니다. 업무담당자(${phone})에게 연락주십시오!`;
+          document.body.classList.add('ended'); // #formArea 숨김 + #endedWrap 표시
+          return; // 이후 기간 표시 로직 불필요
+        }
+
+        // ── [기능1] 다운로드 가능 기간 표시 ──
         if (!from && !until) return;
         const f = s => s ? s.slice(0, 10).replace(/-/g, '.') : '';
         const el = document.getElementById('period');
